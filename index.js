@@ -41,6 +41,14 @@ async function run() {
         res.send({message:true, result})
     })
 
+    app.get("/user/:email/role", async(req, res)=>{
+       
+       let email = req.params.email 
+        let query = {email}
+        let user = await register.findOne(query)
+        res.send(user?.role || "user");
+    })
+
   }
   catch{
 
