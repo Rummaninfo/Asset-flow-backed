@@ -8,8 +8,6 @@ require("dotenv").config();
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@crud.p5kddzk.mongodb.net/?retryWrites=true&w=majority`;
 
-
-
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -30,36 +28,63 @@ async function run() {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
-  try{
-    let db = client.db("asset-flow")
-    let register = db.collection("register")
+    try {
+      let db = client.db("asset-flow");
+      let register = db.collection("register");
+      let assetsCollection = db.collection("assets");
+      let requestsCollection = db.collection('requestCollection')
 
+      // register post
+      app.post("/register", async (req, res) => {
+        let data = req.body;
+        let result = await register.insertOne(data);
+        res.send({ message: true, result });
+      });
 
-    app.post("/register", async (req, res)=>{
-        let data = req.body 
-        let result = await register.insertOne(data)
-        res.send({message:true, result})
-    })
+      app.post("/add-asset", async (req, res) => {
+        const assetData = req.body;
+        assetData.dateAdded = new Date();
+        const result = await assetsCollection.insertOne(assetData);
+        res.send({
+          success: true,
+          result,
+        });
+      });
+      app.post("/asset-requests",async (req, res)=>{
+        let requestData  = req.body 
+        requestData.requestDate = new Date();
+        const result = await requestsCollection.insertOne(requestData);
+        res.send(result)
 
-    app.get("/user/:email/role", async(req, res)=>{
-       
-       let email = req.params.email 
-        let query = {email}
-        let user = await register.findOne(query)
+      })
+
+      // user get
+      app.get("/user/:email/role", async (req, res) => {
+        let email = req.params.email;
+        let query = { email };
+        let user = await register.findOne(query);
         res.send(user?.role || "user");
-    })
+      });
+      // assets get
+      app.get("/assets-list", async (req, res) => {
+        let result = await assetsCollection.find().toArray();
+        res.send(result);
+      });
 
-  }
-  catch{
+      app.get("/employee-assets", async (req, res) => {
+        const assets = await assetsCollection
+          .find({ availableQuantity: { $gt: 0 } })
+          .toArray();
 
-  }
+        res.send(assets);
+      });
+    } catch {}
 
-    
-  
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
   } finally {
     // Ensures that the client will close when you finish/error
-    
   }
 }
 run().catch(console.dir);
