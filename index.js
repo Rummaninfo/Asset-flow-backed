@@ -53,7 +53,7 @@ async function run() {
       app.post("/asset-requests", async (req, res) => {
         let requestData = req.body;
         requestData.requestDate = new Date();
-        requestData.status  = "pending"
+        requestData.status = "pending";
         const result = await requestsCollection.insertOne(requestData);
         res.send(result);
       });
@@ -78,6 +78,15 @@ async function run() {
         const result = await requestsCollection
           .find({ requesterEmail: email })
           .toArray();
+
+        res.send(result);
+      });
+
+      app.get("/hr-requests/:hrEmail", async (req, res) => {
+        const hrEmail = req.params.hrEmail;
+        console.log(hrEmail, 'yessss')
+
+        const result = await requestsCollection.find({ hrEmail }).toArray();
 
         res.send(result);
       });
