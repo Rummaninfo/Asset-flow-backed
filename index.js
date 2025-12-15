@@ -5,7 +5,7 @@ const port = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 require("dotenv").config();
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@crud.p5kddzk.mongodb.net/?retryWrites=true&w=majority`;
 
 const client = new MongoClient(uri, {
@@ -33,6 +33,50 @@ async function run() {
       let register = db.collection("register");
       let assetsCollection = db.collection("assets");
       let requestsCollection = db.collection("requestCollection");
+
+      //
+
+     
+
+app.patch("/requests/:id", async (req, res) => {
+  const id = req.params.id;
+  const { status } = req.body;
+
+  if (!status) {
+    return res.status(400).send({ message: "Status is required" });
+  }
+
+  // 1️⃣ request বের করো
+  const request = await requestsCollection.findOne({
+    _id: new ObjectId(id),
+  });
+
+  if (!request) {
+    return res.status(404).send({ message: "Request not found" });
+  }
+
+  // 2️⃣ approved হলে asset quantity কমাও
+  if (status === "approved") {
+    await assetsCollection.updateOne(
+      { _id: new ObjectId(request.assetId) },
+      { $inc: { availableQuantity: -request.requestedQuantity } }
+    );
+  }
+
+  // 3️⃣ request status update
+  const result = await requestsCollection.updateOne(
+    { _id: new ObjectId(id) },
+    {
+      $set: {
+        requestStatus: status,
+        decisionDate: new Date(),
+      },
+    }
+  );
+
+  res.send({ success: true, modifiedCount: result.modifiedCount });
+});
+
 
       // register post
       app.post("/register", async (req, res) => {
@@ -84,7 +128,7 @@ async function run() {
 
       app.get("/hr-requests/:hrEmail", async (req, res) => {
         const hrEmail = req.params.hrEmail;
-        console.log(hrEmail, 'yessss')
+        console.log(hrEmail, "yessss");
 
         const result = await requestsCollection.find({ hrEmail }).toArray();
 
