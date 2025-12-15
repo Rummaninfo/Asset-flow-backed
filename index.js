@@ -32,7 +32,7 @@ async function run() {
       let db = client.db("asset-flow");
       let register = db.collection("register");
       let assetsCollection = db.collection("assets");
-      let requestsCollection = db.collection('requestCollection')
+      let requestsCollection = db.collection("requestCollection");
 
       // register post
       app.post("/register", async (req, res) => {
@@ -50,13 +50,13 @@ async function run() {
           result,
         });
       });
-      app.post("/asset-requests",async (req, res)=>{
-        let requestData  = req.body 
+      app.post("/asset-requests", async (req, res) => {
+        let requestData = req.body;
         requestData.requestDate = new Date();
+        requestData.status  = "pending"
         const result = await requestsCollection.insertOne(requestData);
-        res.send(result)
-
-      })
+        res.send(result);
+      });
 
       // user get
       app.get("/user/:email/role", async (req, res) => {
@@ -68,6 +68,17 @@ async function run() {
       // assets get
       app.get("/assets-list", async (req, res) => {
         let result = await assetsCollection.find().toArray();
+        res.send(result);
+      });
+
+      // request data get
+      app.get("/my-requests/:email", async (req, res) => {
+        const email = req.params.email;
+
+        const result = await requestsCollection
+          .find({ requesterEmail: email })
+          .toArray();
+
         res.send(result);
       });
 
