@@ -242,6 +242,28 @@ async function run() {
         }
       });
 
+      // employee list
+
+      app.get("/hr/employees/:hrEmail", async (req, res) => {
+        try {
+          const hrEmail = req.params.hrEmail;
+
+          const employees = await employeeAffiliationsCollection
+            .find({ hrEmail })
+            .toArray();
+
+          res.send({
+            success: true,
+            employees,
+          });
+        } catch (error) {
+          res.status(500).send({
+            success: false,
+            employees: [],
+          });
+        }
+      });
+
       // app.get("/my-companies/:employeEmail", async (req, res) => {
       //   const employeeEmail = req.params.employeeEmail
       //   let filet = { employeeEmail: employeeEmail }
@@ -253,31 +275,46 @@ async function run() {
       // });
 
       app.get("/my-companies/:employeeEmail", async (req, res) => {
-  const employeeEmail = req.params.employeeEmail;
-  
-  console.log("Email received:", employeeEmail);
-  
-  let filter = { employeeEmail: employeeEmail };
-  
-  let companies = await employeeAffiliationsCollection
-    .find(filter)
-    .toArray();
-    
-  res.send({
-    
-    success: true,
-    count: companies.length,
-    companies
-  });
-});
+        try {
+          const employeeEmail = req.params.employeeEmail;
 
-app.get("/company-team/:companyName", async (req, res)=>{
-  let companyName = req.params.companyName 
-  console.log(companyName, "company name")
-  let teamMember = await employeeAffiliationsCollection.find({companyName: companyName}).toArray()
-   res.send(teamMember)
-})
+          const companies = await employeeAffiliationsCollection
+            .find({ employeeEmail })
+            .toArray();
 
+          res.send({
+            success: true,
+            companies,
+          });
+        } catch (error) {
+          res.status(500).send({
+            success: false,
+            companies: [],
+          });
+        }
+      });
+
+      app.get("/company-team/:companyName", async (req, res) => {
+        try {
+          const companyName = req.params.companyName;
+
+          const teamMembers = await employeeAffiliationsCollection
+            .find({
+              companyName: { $regex: `^${companyName}$`, $options: "i" },
+            })
+            .toArray();
+
+          res.send({
+            success: true,
+            teamMembers,
+          });
+        } catch (error) {
+          res.status(500).send({
+            success: false,
+            teamMembers: [],
+          });
+        }
+      });
       app.get("/employee-assets", async (req, res) => {
         const assets = await assetsCollection
           .find({ availableQuantity: { $gt: 0 } })
