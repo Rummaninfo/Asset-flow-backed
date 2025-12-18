@@ -255,12 +255,7 @@ async function run() {
   }
 });
 
-      //  confused**
-      // app.get("/user/:email", async (req, res) => {
-      //   const email = req.params.email;
-      //   const user = await register.findOne({ email });
-      //   res.send(user);
-      // });
+      
 
       // user get
       app.get("/user/:email/role", async (req, res) => {
