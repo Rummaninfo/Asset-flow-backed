@@ -7,6 +7,9 @@ app.use(cors());
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@crud.p5kddzk.mongodb.net/?retryWrites=true&w=majority`;
+// stripe
+
+const stripe = require("stripe")(process.env.STRIPE);
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -35,6 +38,7 @@ async function run() {
       let requestsCollection = db.collection("requestCollection");
       let assignedAssetsCollection = db.collection("assignedAssets");
       let employeeAffiliationsCollection = db.collection("employeeAffiliation");
+      let Packages = db.collection("Packages");
 
       //
 
@@ -81,6 +85,25 @@ async function run() {
               return res.status(404).send({
                 success: false,
                 message: "Asset not found",
+              });
+            }
+
+            const hr = await register.findOne({
+              email: request.hrEmail,
+              role: "hr",
+            });
+
+            if (!hr) {
+              return res.status(404).send({
+                success: false,
+                message: "HR not found",
+              });
+            }
+
+            if (hr.currentEmployees >= hr.packageLimit) {
+              return res.status(403).send({
+                success: false,
+                message: "Package limit reached. Please upgrade your package.",
               });
             }
 
@@ -187,6 +210,51 @@ async function run() {
         const result = await requestsCollection.insertOne(requestData);
         res.send(result);
       });
+
+      // payment realed apis
+
+     app.post("/create-checkout-session", async (req, res) => {
+
+      console.log(req.body)
+  try {
+    const paymentinfo = req.body;
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      mode: "payment",
+
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            unit_amount: paymentinfo.amount * 120, // 🔥 8 USD → 800
+            product_data: {
+              name: "Service Payment",
+              description: "One-time payment",
+            },
+          },
+          quantity: 1,
+        },
+      ],
+
+      // যদি hrEmail ইমেইল হয়
+      customer_email: paymentinfo.hrEmail,
+
+      metadata: {
+        packageId: paymentinfo.packageId.toString(),
+      },
+
+      success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success`,
+      cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancel`,
+    });
+
+    res.send({ url: session.url });
+  } catch (error) {
+    console.error("Stripe Checkout Error:", error);
+    res.status(500).send({ error: "Checkout session তৈরি করা যায়নি" });
+  }
+});
+
       //  confused**
       // app.get("/user/:email", async (req, res) => {
       //   const email = req.params.email;
@@ -201,6 +269,13 @@ async function run() {
         let user = await register.findOne(query);
         res.send(user?.role || "user");
       });
+      app.get("/user/:email", async (req, res) => {
+        let email = req.params.email;
+        let query = { email };
+        let result = await register.findOne(query);
+        res.send(result);
+      });
+
       // assets get
       app.get("/assets-list", async (req, res) => {
         let result = await assetsCollection.find().toArray();
@@ -321,6 +396,18 @@ async function run() {
           .toArray();
 
         res.send(assets);
+      });
+
+      app.get("/packages", async (req, res) => {
+        let result = await Packages.find().toArray();
+        res.send(result);
+      });
+
+      app.delete("/employee/:id", async (req, res) => {
+        let id = req.params.id;
+        let filter = { _id: new ObjectId(id) };
+        let result = await employeeAffiliationsCollection.deleteOne(filter);
+        res.send(result);
       });
     } catch {}
 
