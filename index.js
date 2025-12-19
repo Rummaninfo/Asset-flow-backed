@@ -187,6 +187,33 @@ async function run() {
         }
       });
 
+      // payment update packages
+      app.patch("/payment-success", async (req, res) => {
+        let sessionId = req.query.session_id;
+        // console.log("sessionId", sessionId)
+        let session = await stripe.checkout.sessions.retrieve(sessionId);
+        console.log("session retirve", session);
+        if (session.payment_status === "paid") {
+          let id = session.metadata.packageId;
+          // let query = { _id: new ObjectId(id) };
+          let query = { email: session.customer_email };
+
+          let packageName = session.metadata.packageName;
+          let packageLimit = 5;
+          if (packageName === "Standard") packageLimit = 10;
+          if (packageName === "Premium") packageLimit = 20;
+
+          await register.updateOne(query, {
+            $set: {
+              subscription: packageName,
+              packageLimit: packageLimit,
+            },
+          });
+        }
+
+        res.send({ success: true, message: "Package upgraded successfully" });
+      });
+
       // register post
       app.post("/register", async (req, res) => {
         let data = req.body;
@@ -213,49 +240,48 @@ async function run() {
 
       // payment realed apis
 
-     app.post("/create-checkout-session", async (req, res) => {
+      app.post("/create-checkout-session", async (req, res) => {
+        console.log(req.body);
+        try {
+          const paymentinfo = req.body;
+          console.log(paymentinfo, "infor");
 
-      console.log(req.body)
-  try {
-    const paymentinfo = req.body;
+          const session = await stripe.checkout.sessions.create({
+            payment_method_types: ["card"],
+            mode: "payment",
 
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      mode: "payment",
+            line_items: [
+              {
+                price_data: {
+                  currency: "usd",
+                  unit_amount: paymentinfo.amount * 120, // 🔥 8 USD → 800
+                  product_data: {
+                    name: "Service Payment",
+                    description: "One-time payment",
+                  },
+                },
+                quantity: 1,
+              },
+            ],
 
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            unit_amount: paymentinfo.amount * 120, // 🔥 8 USD → 800
-            product_data: {
-              name: "Service Payment",
-              description: "One-time payment",
+            // যদি hrEmail ইমেইল হয়
+            customer_email: paymentinfo.hrEmail,
+
+            metadata: {
+              packageId: paymentinfo.packageId.toString(),
+              packageName: paymentinfo.packageName,
             },
-          },
-          quantity: 1,
-        },
-      ],
 
-      // যদি hrEmail ইমেইল হয়
-      customer_email: paymentinfo.hrEmail,
+            success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancel?session_id={CHECKOUT_SESSION_ID}`,
+          });
 
-      metadata: {
-        packageId: paymentinfo.packageId.toString(),
-      },
-
-      success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success`,
-      cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancel`,
-    });
-
-    res.send({ url: session.url });
-  } catch (error) {
-    console.error("Stripe Checkout Error:", error);
-    res.status(500).send({ error: "Checkout session তৈরি করা যায়নি" });
-  }
-});
-
-      
+          res.send({ url: session.url });
+        } catch (error) {
+          console.error("Stripe Checkout Error:", error);
+          res.status(500).send({ error: "Checkout session তৈরি করা যায়নি" });
+        }
+      });
 
       // user get
       app.get("/user/:email/role", async (req, res) => {
