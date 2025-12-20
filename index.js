@@ -430,6 +430,18 @@ async function run() {
         let result = await employeeAffiliationsCollection.deleteOne(filter);
         res.send(result);
       });
+
+      app.delete("/asset-delete/:id",async (req, res)=>{
+        let id = req.params.id 
+        let filter = {_id: new ObjectId(id)}
+         let result = await assetsCollection.deleteOne(filter)
+         res.send({
+          message: "delete successfully", 
+          result
+         })
+        
+
+      })
     } catch {}
 
     console.log(
