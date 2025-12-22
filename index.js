@@ -9,6 +9,32 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@crud.p5kddzk.mongodb.net/?retryWrites=true&w=majority`;
 // stripe
 
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./assetsflow-firebase-adminsdk.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
+let verifyToken = async (req, res, next) => {
+ 
+  let token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).send({ message: "unauthorized token" });
+  }
+
+  try {
+    let idToken = token.split(' ')[1];
+    let decoded = await admin.auth().verifyIdToken(idToken);
+    console.log(decoded)
+  } catch (er) {
+console.log(er)
+return res.status(401).send({message: "unauthorized access"})
+  }
+  next();
+};
+
 const stripe = require("stripe")(process.env.STRIPE);
 
 const client = new MongoClient(uri, {
@@ -107,18 +133,18 @@ async function run() {
               });
             }
 
-            if (asset.availableQuantity < 1) {
-              return res.status(400).send({
-                success: false,
-                message: "Asset is out of stock",
-              });
-            }
+            // if (asset.availableQuantity < 1) {
+            //   return res.status(400).send({
+            //     success: false,
+            //     message: "Asset is out of stock",
+            //   });
+            // }
 
             // ✅ Asset quantity কমান (1 টি)
-            await assetsCollection.updateOne(
-              { _id: new ObjectId(request.assetId) },
-              { $inc: { availableQuantity: -1 } } // ✅ 1 কমাবেন
-            );
+            // await assetsCollection.updateOne(
+            //   { _id: new ObjectId(request.assetId) },
+            //   { $inc: { availableQuantity: -1 } } // ✅ 1 কমাবেন
+            // );
 
             // ✅ Employee affiliation
             let existingAffiliation =
@@ -165,7 +191,7 @@ async function run() {
             { _id: new ObjectId(id) },
             {
               $set: {
-                requestStatus: status,
+                status: status,
                 approvalDate: status === "approved" ? new Date() : null, // ✅ যোগ করুন
                 processedBy: processedBy || request.hrEmail, // ✅ কে করলো
                 decisionDate: new Date(),
@@ -290,16 +316,19 @@ async function run() {
         let user = await register.findOne(query);
         res.send(user?.role || "user");
       });
+      // eta fix korshi lagle boilo
       app.get("/user/:email", async (req, res) => {
         let email = req.params.email;
-        let query = { email };
+        let query = { email: email };
         let result = await register.findOne(query);
         res.send(result);
       });
 
       // assets get
-      app.get("/assets-list", async (req, res) => {
-        let result = await assetsCollection.find().toArray();
+      app.get("/assets-list/:email", async (req, res) => {
+        let email = req.params.email;
+        let query = { hrEmail: email };
+        let result = await assetsCollection.find(query).toArray();
         res.send(result);
       });
 
@@ -314,14 +343,30 @@ async function run() {
         res.send(result);
       });
 
-      app.get("/hr-requests/:hrEmail", async (req, res) => {
+      app.get("/hr/employees/:hrEmail", async (req, res) => {
         const hrEmail = req.params.hrEmail;
-        const result = await requestsCollection.find({ hrEmail }).toArray();
-        res.send(result);
+
+        const employees = await employeeAffiliationsCollection
+          .find({ hrEmail })
+          .toArray();
+
+        const employeesWithAssets = await Promise.all(
+          employees.map(async (emp) => {
+            const count = await assignedAssetsCollection.countDocuments({
+              employeeEmail: emp.employeeEmail,
+              status: "assigned",
+            });
+
+            return { ...emp, assets: count };
+          })
+        );
+
+        res.send({ employees: employeesWithAssets });
       });
 
       // my team
       app.get("/my-team/:companyName", async (req, res) => {
+        console.log("accesstoken", req.headers);
         const companyName = req.params.companyName;
 
         try {
@@ -338,27 +383,24 @@ async function run() {
         }
       });
 
-      // employee list
-
-      app.get("/hr/employees/:hrEmail", async (req, res) => {
+      app.get("/hr-requests/:hrEmail", async (req, res) => {
         try {
           const hrEmail = req.params.hrEmail;
 
-          const employees = await employeeAffiliationsCollection
+          // HR এর সব request আনবে
+          const requests = await requestsCollection
             .find({ hrEmail })
+            .sort({ requestDate: -1 }) // latest first
             .toArray();
 
-          res.send({
-            success: true,
-            employees,
-          });
+          res.send(requests);
         } catch (error) {
-          res.status(500).send({
-            success: false,
-            employees: [],
-          });
+          console.error("HR Requests Error:", error);
+          res.status(500).send([]);
         }
       });
+
+      // employee list
 
       // app.get("/my-companies/:employeEmail", async (req, res) => {
       //   const employeeEmail = req.params.employeeEmail
@@ -419,29 +461,59 @@ async function run() {
         res.send(assets);
       });
 
-      app.get("/packages", async (req, res) => {
+      app.get("/packages", verifyToken, async (req, res) => {
+        // console.log(req.headers)
         let result = await Packages.find().toArray();
         res.send(result);
       });
 
       app.delete("/employee/:id", async (req, res) => {
-        let id = req.params.id;
-        let filter = { _id: new ObjectId(id) };
-        let result = await employeeAffiliationsCollection.deleteOne(filter);
-        res.send(result);
+        try {
+          const id = req.params.id;
+
+          // 1️⃣ আগে affiliation আনতে হবে
+          const affiliation = await employeeAffiliationsCollection.findOne({
+            _id: new ObjectId(id),
+          });
+
+          if (!affiliation) {
+            return res.status(404).send({
+              success: false,
+              message: "Affiliation not found",
+            });
+          }
+
+          // 2️⃣ affiliation delete
+          const result = await employeeAffiliationsCollection.deleteOne({
+            _id: new ObjectId(id),
+          });
+
+          // 3️⃣ HR currentEmployees কমাও
+          await register.updateOne(
+            { email: affiliation.hrEmail, role: "hr" },
+            { $inc: { currentEmployees: -1 } }
+          );
+
+          res.send({
+            success: true,
+            message: "Employee removed",
+            result,
+          });
+        } catch (error) {
+          console.error(error);
+          res.status(500).send({ success: false });
+        }
       });
 
-      app.delete("/asset-delete/:id",async (req, res)=>{
-        let id = req.params.id 
-        let filter = {_id: new ObjectId(id)}
-         let result = await assetsCollection.deleteOne(filter)
-         res.send({
-          message: "delete successfully", 
-          result
-         })
-        
-
-      })
+      app.delete("/assetlist/:id", async (req, res) => {
+        let id = req.params.id;
+        let filter = { _id: new ObjectId(id) };
+        console.log(filter);
+        let result = await assetsCollection.deleteOne(filter);
+        res.send({
+          message: "delete successfully",
+        });
+      });
     } catch {}
 
     console.log(
