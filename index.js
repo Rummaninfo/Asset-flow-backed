@@ -3,8 +3,11 @@ const app = express();
 let cors = require("cors");
 app.use(
   cors({
-    origin: ["http://localhost:5173", "https://assetsflow-ec37a.web.app", "https://api.imgbb.com/1/upload?key=5df8891d2b739bdfbe849cb2e09fab7e"
-],
+    origin: [
+      "http://localhost:5173",
+      "https://assetsflow-ec37a.web.app",
+      "https://api.imgbb.com/1/upload?key=5df8891d2b739bdfbe849cb2e09fab7e",
+    ],
     credentials: true,
   })
 );
@@ -30,7 +33,7 @@ admin.initializeApp({
 
 let verifyToken = async (req, res, next) => {
   let token = req.headers.authorization;
-  console.log("token", token)
+  console.log("token", token);
   if (!token) {
     return res.status(401).send({ message: "unauthorized token" });
   }
@@ -39,14 +42,13 @@ let verifyToken = async (req, res, next) => {
     let idToken = token.split(" ")[1];
     let decoded = await admin.auth().verifyIdToken(idToken);
     // console.log("decoded ", decoded);
-    req.decoded_email = decoded.email
+    req.decoded_email = decoded.email;
     // console.log('decodec email' , req.decoded_email)
     next();
   } catch (er) {
     console.log(er);
     return res.status(401).send({ message: "unauthorized access" });
   }
-  
 };
 
 const stripe = require("stripe")(process.env.STRIPE);
@@ -62,7 +64,6 @@ app.get("/", (req, res) => {
   res.send("Hello World!");
 });
 
-
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
@@ -76,30 +77,28 @@ async function run() {
       let employeeAffiliationsCollection = db.collection("employeeAffiliation");
       let Packages = db.collection("Packages");
 
-      // middle ware 
-      let verifyHr = async(req, res, next)=>{
-        let email = req.decoded_email
-        let query = {email}
-        let user = await register.findOne(query)
-        if(!user || user.role !== "hr"){
-          return res.status(403).send({message: "forbiden access"})
+      // middle ware
+      let verifyHr = async (req, res, next) => {
+        let email = req.decoded_email;
+        let query = { email };
+        let user = await register.findOne(query);
+        if (!user || user.role !== "hr") {
+          return res.status(403).send({ message: "forbiden access" });
         }
-          
 
-        next()
+        next();
+      };
 
-      }
-
-
-
-
-
-
-
-
-
-
-
+      //  allemplooye
+      app.get("/employee/:email", async (req, res) => {
+        let email = req.params.email;
+        console.log(email);
+        let filter = { hrEmail: email };
+        let result = await employeeAffiliationsCollection
+          .find(filter)
+          .toArray();
+        res.send(result);
+      });
 
       app.patch("/requests/:id", async (req, res) => {
         try {
@@ -176,7 +175,7 @@ async function run() {
             // ✅ Asset quantity কমান (1 টি)
             await assetsCollection.updateOne(
               { _id: new ObjectId(request.assetId) },
-              
+
               { $inc: { availableQuantity: -1 } } // ✅ 1 কমাবেন
             );
 
@@ -187,10 +186,17 @@ async function run() {
                 companyName: request.companyName,
               });
 
+            const employeeUser = await register.findOne({
+              email: request.requesterEmail,
+              role: "employee",
+            })
+            console.log('ami emoployeee', employeeUser)
+
             if (!existingAffiliation) {
               await employeeAffiliationsCollection.insertOne({
                 employeeEmail: request.requesterEmail,
                 employeeName: request.requesterName,
+                employeeBirthDate: employeeUser.dateOfBirth,  
                 hrEmail: request.hrEmail,
                 companyName: request.companyName,
                 affiliationDate: new Date(),
@@ -218,11 +224,7 @@ async function run() {
               returnDate: null,
               status: "assigned",
             });
-
-
           }
-
-
 
           // 3️⃣ Request status update (একটু আপডেটেড)
           const result = await requestsCollection.updateOne(
@@ -283,12 +285,13 @@ async function run() {
 
       // register post
       app.post("/register", async (req, res) => {
+        console.log(req.body);
         let data = req.body;
         let result = await register.insertOne(data);
         res.send({ message: true, result });
       });
 
-      app.post("/add-asset", verifyToken, verifyHr,  async (req, res) => {
+      app.post("/add-asset", verifyToken, verifyHr, async (req, res) => {
         const assetData = req.body;
         assetData.dateAdded = new Date();
         const result = await assetsCollection.insertOne(assetData);
@@ -354,6 +357,7 @@ async function run() {
       app.get("/user/:email/role", async (req, res) => {
         let email = req.params.email;
         let query = { email };
+        console.log(query);
         let user = await register.findOne(query);
         res.send(user?.role || "user");
       });
@@ -366,7 +370,7 @@ async function run() {
       });
 
       // assets get
-      app.get("/assets-list/:email", verifyToken,   async (req, res) => {
+      app.get("/assets-list/:email", verifyToken, async (req, res) => {
         let email = req.params.email;
         let query = { hrEmail: email };
         let result = await assetsCollection.find(query).toArray();
@@ -494,7 +498,7 @@ async function run() {
           });
         }
       });
-      app.get("/employee-assets", verifyToken,  async (req, res) => {
+      app.get("/employee-assets", verifyToken, async (req, res) => {
         const assets = await assetsCollection
           .find({ availableQuantity: { $gt: 0 } })
           .toArray();
@@ -502,13 +506,13 @@ async function run() {
         res.send(assets);
       });
 
-      app.get("/packages", verifyToken, verifyHr,  async (req, res) => {
+      app.get("/packages", async (req, res) => {
         // console.log(req.headers)
         let result = await Packages.find().toArray();
         res.send(result);
       });
 
-      app.delete("/employee/:id", verifyToken, verifyHr,  async (req, res) => {
+      app.delete("/employee/:id", verifyToken, verifyHr, async (req, res) => {
         try {
           const id = req.params.id;
 
@@ -546,7 +550,7 @@ async function run() {
         }
       });
 
-      app.delete("/assetlist/:id", verifyToken, verifyHr,  async (req, res) => {
+      app.delete("/assetlist/:id", verifyToken, verifyHr, async (req, res) => {
         let id = req.params.id;
         let filter = { _id: new ObjectId(id) };
         console.log(filter);
